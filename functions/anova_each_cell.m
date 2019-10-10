@@ -1,9 +1,9 @@
-function [ind_sign ] = anova_each_cell( convolved_H_all )
+function [ind_sign ] = anova_each_cell( data )
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
     
     ind_sign=[];
-    numb_days=length(convolved_H_all);
+    
 
     
     base_st=1;
@@ -12,118 +12,62 @@ function [ind_sign ] = anova_each_cell( convolved_H_all )
     pert_st=201;
     pert_end=200+300;
     
-    contra_base_mat=cell(1,1);
-    contra_pert_mat=cell(1,1);
-    start_cell_ind=0;
-    
-    for i=1:numb_days
-        convolved_H=convolved_H_all{i};
-        
-        for k=1:8
-            pert=extract_neuron_numb_per_baseline(convolved_H,k);
-            numb_neuron=size(pert,2);
-            base_ep=squeeze(mean(pert(:,:,base_st:base_end),3));
-            pert_ep=squeeze(mean(pert(:,:,pert_st:pert_end),3));
-            for j=1:numb_neuron
-                contra_base_mat{start_cell_ind+j,k}=base_ep(:,j);
+   
+%     for i=1:numb_days
+%         convolved_H=convolved_H_all{i};
+%         
+    [contra_data,ipsi_data] = get_neuron_data_pert_epoch(data,0);
+    numb_days=size(contra_data,1);
+    for day=1:numb_days
+        [~,numb_neurons,~]=size(contra_data{day,1});
+        for neuron=1:numb_neurons
+            base_contra=[];
+            pert_contra=[];
+            base_ipsi=[];
+            pert_ipsi=[];
+            for TP_numb=1:8
+                temp_data_contra=squeeze(contra_data{day,TP_numb}(:,neuron,:));% data are trial by time points
+                temp_data_ipsi=squeeze(ipsi_data{day,TP_numb}(:,neuron,:));% data are trial by time points
+                base_contra=[base_contra,mean(temp_data_contra(:,base_st:base_end),2)];
+                pert_contra=[pert_contra,mean(temp_data_contra(:,pert_st:pert_end),2)];
+                base_ipsi=[base_ipsi,mean(temp_data_ipsi(:,base_st:base_end),2)];
+                pert_ipsi=[pert_ipsi,mean(temp_data_ipsi(:,pert_st:pert_end),2)];
             end
-            for j=1:numb_neuron
-                contra_pert_mat{start_cell_ind+j,k}=pert_ep(:,j);
-            end
+            sign=ANOVA_analysis(base_contra,pert_contra,base_ipsi,pert_ipsi);
+            ind_sign=[ind_sign sign];
         end
-        
-        start_cell_ind=start_cell_ind+numb_neuron;
-       
     end
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    ipsi_base_mat=cell(1,1);
-    ipsi_pert_mat=cell(1,1);
-    start_cell_ind=0;
-    
-    for i=1:numb_days
-        convolved_H=convolved_H_all{i};
-        
-        for k=10:17
-            pert=extract_neuron_numb_per_baseline(convolved_H,k);
-            numb_neuron=size(pert,2);
-            base_ep=squeeze(mean(pert(:,:,base_st:base_end),3));
-            pert_ep=squeeze(mean(pert(:,:,pert_st:pert_end),3));
-            for j=1:numb_neuron
-                ipsi_base_mat{start_cell_ind+j,k-9}=base_ep(:,j);
-            end
-            for j=1:numb_neuron
-                ipsi_pert_mat{start_cell_ind+j,k-9}=pert_ep(:,j);
-            end
-        end
-        
-        start_cell_ind=start_cell_ind+numb_neuron;
-       
-    end
-    
-    
-    
-    numb_neuron=size(contra_base_mat,1);
-    numb_load=size(contra_base_mat,2);
-    
-    for i=1:numb_neuron
-        data=[];
-        label_dir=[];
-        label_context=[];
-        label_time=[];
-        for k=1:numb_load
-            data=[data contra_base_mat{i,k}.'];
-            numb_trials=size(contra_base_mat{i,k},1);
-            for trial=1:numb_trials
-                label_dir=[label_dir k];
-                label_context=[label_context,1];
-                label_time=[label_time,1];
-            end
-        end
-        for k=1:numb_load
-            data=[data contra_pert_mat{i,k}.'];
-            numb_trials=size(contra_pert_mat{i,k},1);
-            for trial=1:numb_trials
-                label_dir=[label_dir k];
-                label_context=[label_context,1];
-                label_time=[label_time,2];
-            end
-        end
-        for k=1:numb_load
-            data=[data ipsi_base_mat{i,k}.'];
-            numb_trials=size(ipsi_base_mat{i,k},1);
-            for trial=1:numb_trials
-                label_dir=[label_dir k];
-                label_context=[label_context,2];
-                label_time=[label_time,1];
-            end
-        end
-        for k=1:numb_load
-            data=[data ipsi_pert_mat{i,k}.'];
-            numb_trials=size(ipsi_pert_mat{i,k},1);
-            for trial=1:numb_trials
-                label_dir=[label_dir k];
-                label_context=[label_context,2];
-                label_time=[label_time,2];
-            end
-        end
-        [p,tbl,stats]=anovan(data,{label_context,label_dir,label_time},'model','full','varnames',{'context','load direction','time'});
-        close ALL hidden
-        if p(3)<0.05 || p(5)<0.05 || p(6)<0.05 || p(7)<0.05 %index: 3=main time effect, 5=intrxn time with context, 6=intrxn time with load dir, 7=3way intrxn
-            ind_sign=[ind_sign i];
-        end
-        
-    end
-    
-    
-    
-
+    ind_sign=find(ind_sign==1);
 end
 
+                
+           
+
+function [sign]=ANOVA_analysis(base_contra,pert_contra,base_ipsi,pert_ipsi)
+   %assume base_contra is trials x conditions
+   trials=size(base_contra,1);
+   full_data=[];
+   label_dir=[];
+   label_context=[];
+   label_time=[];
+   for TP_numb=1:8
+       full_data=[full_data;base_contra(:,TP_numb)];
+       full_data=[full_data;pert_contra(:,TP_numb)];
+       full_data=[full_data;base_ipsi(:,TP_numb)];
+       full_data=[full_data;pert_ipsi(:,TP_numb)];
+       label_dir=[label_dir;zeros(trials*4,1)+TP_numb];
+       label_context=[label_context;[zeros(trials*2,1);zeros(trials*2,1)+1]];
+       label_time=[label_time;[zeros(trials,1);zeros(trials,1)+1;zeros(trials,1);zeros(trials,1)+1]];
+   end
+   
+   [p,~,~]=anovan(full_data,{label_context,label_dir,label_time},'model','full','varnames',{'context','load direction','time'});
+    close ALL hidden
+    if p(3)<0.05 || p(5)<0.05 || p(6)<0.05 || p(7)<0.05 %index: 3=main time effect, 5=intrxn time with context, 6=intrxn time with load dir, 7=3way intrxn
+        sign=1;
+    else
+        sign=0;
+    end
+       
+        
+        
+end
